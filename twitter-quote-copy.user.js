@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Twitter Quote Copy
 // @namespace    https://instinct.local/
-// @version      1.3
+// @version      1.4
 // @downloadURL  https://raw.githubusercontent.com/tuta-amb/twitter-quote-copy/main/twitter-quote-copy.user.js
 // @updateURL    https://raw.githubusercontent.com/tuta-amb/twitter-quote-copy/main/twitter-quote-copy.user.js
 // @description  Adds a quote-copy button to every post's action bar on X/Twitter. Copies the post as a blockquote; on a permalink page it also nests the thread above it (parents get deeper > levels). Ends with the permalink in <small> tags.
@@ -57,7 +57,20 @@
   }
 
   function tweetInfo(article) {
-    var textEl = article.querySelector('[data-testid="tweetText"]');
+    // The post's own text is the first tweetText that is not inside an
+    // embedded quoted-post card (role="link"). Quoted cards are collected
+    // separately and treated as sitting directly above the post.
+    var textEls = Array.prototype.slice.call(
+      article.querySelectorAll('[data-testid="tweetText"]')
+    );
+    var textEl = null;
+    var quoted = [];
+    textEls.forEach(function (el) {
+      var card = el.closest('[role="link"]');
+      var inCard = card && article.contains(card) && card !== article;
+      if (inCard) quoted.push(el.innerText);
+      else if (!textEl) textEl = el;
+    });
     var text = textEl ? textEl.innerText : "";
 
     var url = null;
@@ -82,8 +95,15 @@
     if (!m) return null;
     return {
       text: text,
+      quoted: quoted,
       url: "https://twitter.com/" + m[1] + "/status/" + m[2],
     };
+  }
+
+  // A post's chain entries: its quoted post(s) first (they count as the
+  // post directly above it), then the post itself.
+  function entriesFor(info) {
+    return info.quoted.concat([info.text]);
   }
 
   function statusIdFromLocation() {
@@ -100,7 +120,7 @@
     var clickedInfo = tweetInfo(clicked);
     if (!clickedInfo) return null;
 
-    var single = { texts: [clickedInfo.text], url: clickedInfo.url };
+    var single = { texts: entriesFor(clickedInfo), url: clickedInfo.url };
     var statusId = statusIdFromLocation();
     if (!statusId) return single;
 
@@ -121,7 +141,7 @@
     var texts = [];
     for (var j = 0; j <= clickedIdx; j++) {
       var inf = tweetInfo(articles[j]);
-      if (inf) texts.push(inf.text);
+      if (inf) texts = texts.concat(entriesFor(inf));
     }
     return { texts: texts, url: clickedInfo.url };
   }
